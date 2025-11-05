@@ -1891,27 +1891,375 @@
             }
 
             exportPNG() {
-                const svgData = new XMLSerializer().serializeToString(this.canvas);
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                canvas.width = this.canvas.getAttribute('width');
-                canvas.height = this.canvas.getAttribute('height');
-                
-                const img = new Image();
-                img.onload = () => {
-                    ctx.drawImage(img, 0, 0);
+                try {
+                    console.log('=== PNG Export Started ===');
+                    this.updateStatus('Preparing PNG export...');
+                    
+                    // Add visual feedback - disable button temporarily
+                    const exportBtn = document.getElementById('exportPngBtn');
+                    if (exportBtn) {
+                        exportBtn.disabled = true;
+                        exportBtn.style.opacity = '0.5';
+                    }
+                    
+                    // Calculate the bounding box of all content
+                    console.log('Calculating content bounds...');
+                    const contentBounds = this.getContentBounds();
+                    console.log('Content bounds result:', contentBounds);
+                    
+                    if (!contentBounds) {
+                        console.log('No content found for export');
+                        this.updateStatus('No content to export - Create some shapes first');
+                        alert('No content to export. Please create some shapes first.');
+                        
+                        // Re-enable button
+                        if (exportBtn) {
+                            exportBtn.disabled = false;
+                            exportBtn.style.opacity = '1';
+                        }
+                        
+                        // Reset status after delay
+                        setTimeout(() => {
+                            this.updateStatus('Ready');
+                        }, 3000);
+                        return;
+                    }
+
+                    console.log('Creating export SVG...');
+                    // Create a clean SVG without viewBox transformations
+                    const exportSvg = this.createCleanExportSVG(contentBounds);
+                    console.log('Export SVG created:', exportSvg.substring(0, 200) + '...');
+                    
+                    // Set up canvas with proper dimensions and high DPI support
+                    const pixelRatio = window.devicePixelRatio || 1;
+                    const exportWidth = Math.max(contentBounds.width, 100);
+                    const exportHeight = Math.max(contentBounds.height, 100);
+                    
+                    console.log('Export dimensions:', exportWidth, 'x', exportHeight, 'at', pixelRatio + 'x DPI');
+                    
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Set actual size in pixels for high DPI
+                    canvas.width = exportWidth * pixelRatio;
+                    canvas.height = exportHeight * pixelRatio;
+                    
+                    // Scale the canvas back down using CSS
+                    canvas.style.width = exportWidth + 'px';
+                    canvas.style.height = exportHeight + 'px';
+                    
+                    // Scale the drawing context so everything draws at high DPI
+                    ctx.scale(pixelRatio, pixelRatio);
+                    
+                    // Set white background
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, exportWidth, exportHeight);
+                    
+                    this.updateStatus('Converting to PNG...');
+                    
+                    // Create and load the image
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    
+                    img.onload = () => {
+                        try {
+                            console.log('Image loaded successfully, drawing to canvas...');
+                            ctx.drawImage(img, 0, 0, exportWidth, exportHeight);
+                            
+                            this.updateStatus('Finalizing PNG file...');
+                            
+                            // Convert to blob and download
+                            canvas.toBlob((blob) => {
+                                if (blob) {
+                                    console.log('PNG blob created successfully, size:', blob.size, 'bytes');
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = `svg-editor-export-${Date.now()}.png`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                    
+                                    this.updateStatus('PNG exported successfully!');
+                                    console.log('=== PNG Export Completed Successfully ===');
+                                } else {
+                                    throw new Error('Failed to create PNG blob');
+                                }
+                                
+                                // Re-enable button
+                                if (exportBtn) {
+                                    exportBtn.disabled = false;
+                                    exportBtn.style.opacity = '1';
+                                }
+                                
+                                // Reset status after delay
+                                setTimeout(() => {
+                                    this.updateStatus('Ready');
+                                }, 3000);
+                                
+                            }, 'image/png', 1.0);
+                            
+                        } catch (error) {
+                            console.error('PNG export canvas error:', error);
+                            this.updateStatus('PNG export failed');
+                            alert('PNG export failed: ' + error.message);
+                            
+                            // Re-enable button
+                            if (exportBtn) {
+                                exportBtn.disabled = false;
+                                exportBtn.style.opacity = '1';
+                            }
+                        }
+                    };
+                    
+                    img.onerror = (error) => {
+                        console.error('Image load error:', error);
+                        console.log('Trying fallback export method...');
+                        this.updateStatus('Trying alternative export method...');
+                        
+                        // Try alternative method for problematic SVGs
+                        setTimeout(() => {
+                            this.exportPNGFallback(contentBounds);
+                            
+                            // Re-enable button
+                            if (exportBtn) {
+                                exportBtn.disabled = false;
+                                exportBtn.style.opacity = '1';
+                            }
+                        }, 1000);
+                    };
+                    
+                    // Convert SVG to data URL
+                    console.log('Creating SVG blob...');
+                    const svgBlob = new Blob([exportSvg], { type: 'image/svg+xml;charset=utf-8' });
+                    const svgUrl = URL.createObjectURL(svgBlob);
+                    console.log('SVG URL created, loading image...');
+                    
+                    // Set timeout for image loading
+                    setTimeout(() => {
+                        if (!img.complete) {
+                            console.warn('Image load timeout after 10 seconds');
+                            img.onerror(new Error('Image load timeout'));
+                        }
+                    }, 10000);
+                    
+                    img.src = svgUrl;
+                    
+                } catch (error) {
+                    console.error('PNG export initialization error:', error);
+                    this.updateStatus('PNG export failed');
+                    alert('PNG export failed: ' + error.message);
+                    
+                    // Re-enable button
+                    const exportBtn = document.getElementById('exportPngBtn');
+                    if (exportBtn) {
+                        exportBtn.disabled = false;
+                        exportBtn.style.opacity = '1';
+                    }
+                }
+            }
+
+            // Fallback method for SVGs that can't be loaded as images
+            exportPNGFallback(contentBounds) {
+                try {
+                    this.updateStatus('Using fallback PNG export method...');
+                    
+                    const pixelRatio = window.devicePixelRatio || 1;
+                    const exportWidth = Math.max(contentBounds.width, 100);
+                    const exportHeight = Math.max(contentBounds.height, 100);
+                    
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    canvas.width = exportWidth * pixelRatio;
+                    canvas.height = exportHeight * pixelRatio;
+                    canvas.style.width = exportWidth + 'px';
+                    canvas.style.height = exportHeight + 'px';
+                    
+                    ctx.scale(pixelRatio, pixelRatio);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, exportWidth, exportHeight);
+                    
+                    // Draw shapes manually to canvas
+                    this.drawShapesToCanvas(ctx, contentBounds);
+                    
                     canvas.toBlob((blob) => {
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'svg-editor-export.png';
-                        a.click();
-                        URL.revokeObjectURL(url);
-                    });
+                        if (blob) {
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `svg-editor-export-fallback-${Date.now()}.png`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                            this.updateStatus('PNG exported successfully (fallback method)');
+                        } else {
+                            this.updateStatus('PNG export failed - fallback method failed');
+                            alert('PNG export failed: Unable to create image file');
+                        }
+                    }, 'image/png', 1.0);
+                    
+                } catch (error) {
+                    console.error('PNG fallback export error:', error);
+                    this.updateStatus('PNG export failed');
+                    alert('PNG export failed: ' + error.message);
+                }
+            }
+
+            // Get the bounding box of all content
+            getContentBounds() {
+                console.log('Getting content bounds...');
+                const elements = this.drawingLayers.querySelectorAll('*:not(g)');
+                console.log('Found', elements.length, 'elements for bounds calculation');
+                
+                if (elements.length === 0) {
+                    console.log('No elements found, returning null');
+                    return null;
+                }
+
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                let validElements = 0;
+                
+                elements.forEach((el, index) => {
+                    try {
+                        console.log(`Processing element ${index}:`, el.tagName, el);
+                        const bbox = el.getBBox();
+                        console.log(`Element ${index} bbox:`, bbox);
+                        
+                        if (bbox.width > 0 && bbox.height > 0) {
+                            minX = Math.min(minX, bbox.x);
+                            minY = Math.min(minY, bbox.y);
+                            maxX = Math.max(maxX, bbox.x + bbox.width);
+                            maxY = Math.max(maxY, bbox.y + bbox.height);
+                            validElements++;
+                        }
+                    } catch (e) {
+                        console.log(`getBBox failed for element ${index}, trying attributes...`);
+                        // If getBBox fails, try to get bounds from attributes
+                        const x = parseFloat(el.getAttribute('x') || el.getAttribute('cx') || 0);
+                        const y = parseFloat(el.getAttribute('y') || el.getAttribute('cy') || 0);
+                        const width = parseFloat(el.getAttribute('width') || el.getAttribute('r') || 10);
+                        const height = parseFloat(el.getAttribute('height') || el.getAttribute('r') || 10);
+                        
+                        console.log(`Element ${index} attributes: x=${x}, y=${y}, w=${width}, h=${height}`);
+                        
+                        if (width > 0 && height > 0) {
+                            minX = Math.min(minX, x);
+                            minY = Math.min(minY, y);
+                            maxX = Math.max(maxX, x + width);
+                            maxY = Math.max(maxY, y + height);
+                            validElements++;
+                        }
+                    }
+                });
+
+                if (validElements === 0) {
+                    console.log('No valid elements found, returning null');
+                    return null;
+                }
+
+                // Add some padding
+                const padding = 20;
+                const bounds = {
+                    x: minX - padding,
+                    y: minY - padding,
+                    width: (maxX - minX) + (padding * 2),
+                    height: (maxY - minY) + (padding * 2)
                 };
                 
-                img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+                console.log('Final content bounds:', bounds);
+                return bounds;
+            }
+
+            // Create a clean SVG for export without viewBox transformations
+            createCleanExportSVG(bounds) {
+                const svgNamespace = 'http://www.w3.org/2000/svg';
+                const exportSvg = document.createElementNS(svgNamespace, 'svg');
+                
+                exportSvg.setAttribute('width', bounds.width);
+                exportSvg.setAttribute('height', bounds.height);
+                exportSvg.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
+                exportSvg.setAttribute('xmlns', svgNamespace);
+                
+                // Clone all drawing layers
+                const layersClone = this.drawingLayers.cloneNode(true);
+                exportSvg.appendChild(layersClone);
+                
+                return new XMLSerializer().serializeToString(exportSvg);
+            }
+
+            // Draw shapes directly to canvas as fallback
+            drawShapesToCanvas(ctx, bounds) {
+                const elements = this.drawingLayers.querySelectorAll('*:not(g)');
+                
+                elements.forEach(el => {
+                    ctx.save();
+                    
+                    try {
+                        const x = (parseFloat(el.getAttribute('x') || el.getAttribute('cx') || 0) - bounds.x);
+                        const y = (parseFloat(el.getAttribute('y') || el.getAttribute('cy') || 0) - bounds.y);
+                        
+                        // Set styles
+                        const fill = el.getAttribute('fill') || '#000000';
+                        const stroke = el.getAttribute('stroke') || 'none';
+                        const strokeWidth = parseFloat(el.getAttribute('stroke-width') || 1);
+                        
+                        ctx.fillStyle = fill === 'none' ? 'transparent' : fill;
+                        ctx.strokeStyle = stroke === 'none' ? 'transparent' : stroke;
+                        ctx.lineWidth = strokeWidth;
+                        
+                        // Draw based on element type
+                        switch (el.tagName.toLowerCase()) {
+                            case 'rect':
+                                const width = parseFloat(el.getAttribute('width') || 0);
+                                const height = parseFloat(el.getAttribute('height') || 0);
+                                if (fill !== 'none') ctx.fillRect(x, y, width, height);
+                                if (stroke !== 'none') ctx.strokeRect(x, y, width, height);
+                                break;
+                                
+                            case 'circle':
+                                const r = parseFloat(el.getAttribute('r') || 0);
+                                ctx.beginPath();
+                                ctx.arc(x, y, r, 0, 2 * Math.PI);
+                                if (fill !== 'none') ctx.fill();
+                                if (stroke !== 'none') ctx.stroke();
+                                break;
+                                
+                            case 'ellipse':
+                                const rx = parseFloat(el.getAttribute('rx') || 0);
+                                const ry = parseFloat(el.getAttribute('ry') || 0);
+                                ctx.beginPath();
+                                ctx.ellipse(x, y, rx, ry, 0, 0, 2 * Math.PI);
+                                if (fill !== 'none') ctx.fill();
+                                if (stroke !== 'none') ctx.stroke();
+                                break;
+                                
+                            case 'line':
+                                const x2 = parseFloat(el.getAttribute('x2') || 0) - bounds.x;
+                                const y2 = parseFloat(el.getAttribute('y2') || 0) - bounds.y;
+                                ctx.beginPath();
+                                ctx.moveTo(x, y);
+                                ctx.lineTo(x2, y2);
+                                if (stroke !== 'none') ctx.stroke();
+                                break;
+                                
+                            case 'text':
+                                const fontSize = parseFloat(el.getAttribute('font-size') || 16);
+                                const fontFamily = el.getAttribute('font-family') || 'Arial';
+                                ctx.font = `${fontSize}px ${fontFamily}`;
+                                ctx.textBaseline = 'top';
+                                if (fill !== 'none') ctx.fillText(el.textContent || '', x, y);
+                                if (stroke !== 'none') ctx.strokeText(el.textContent || '', x, y);
+                                break;
+                        }
+                    } catch (error) {
+                        console.warn('Error drawing element to canvas:', error, el);
+                    }
+                    
+                    ctx.restore();
+                });
             }
 
             openImportDialog() {
@@ -2156,7 +2504,13 @@
             }
 
             updateStatus(message) {
-                document.getElementById('statusText').textContent = message;
+                console.log('Status update:', message); // Debug logging
+                const statusElement = document.getElementById('statusText');
+                if (statusElement) {
+                    statusElement.textContent = message;
+                } else {
+                    console.error('Status element not found');
+                }
             }
 
             startPan(clientX, clientY) {
